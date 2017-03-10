@@ -16,6 +16,7 @@ import android.widget.EditText;
 import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.SimpleAdapter;
+import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -44,7 +45,7 @@ public class MainActivity extends AppCompatActivity {
         bitLinkList = new ArrayList<>();
         mListView = (ListView) findViewById(R.id.list);
         mButton = (Button) findViewById(R.id.button);
-        new GetAPIResponse().execute(bitlyHistoryUrl);
+        new GetAPIResponse().execute("History");
         mButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -65,10 +66,10 @@ public class MainActivity extends AppCompatActivity {
         alertDialogBuilder.setCancelable(false)
                 .setPositiveButton("Add", new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int id) {
-                        //resultText.setText("Hello, " + editText.getText());
                         String prefix = "https://api-ssl.bitly.com/v3/user/link_save?access_token=e5137bf26b61baa3c51779306899732bd0f3df44&longUrl=";
                         bitlyNewUrl = prefix + newURL.getText();
                         Log.e("dialog", "new url: " + bitlyNewUrl);
+                        new GetAPIResponse().execute("Save");
                     }
                 })
                 .setNegativeButton("Cancel",
@@ -84,59 +85,87 @@ public class MainActivity extends AppCompatActivity {
 
     private class GetAPIResponse extends AsyncTask<String, Void, Void> {
         String TAG = "API";
-
+        boolean showToast;
         @Override
         protected Void doInBackground(String... params) {
-            String url = params[0];
+
             HttpHandler sh = new HttpHandler();
-            String jsonStr = sh.makeServiceCall(url);
-
-            Log.e(TAG, "Response from url: " + jsonStr);
-
-            if (jsonStr != null) {
-                try {
-                    JSONObject jsonObj = new JSONObject(jsonStr);
-                    if(url.indexOf("/v3/user/link_history") > -1){
-                        getHistory(jsonObj);
+            if(params[0].equals("Save")){
+                String jsonSaveStr = sh.makeServiceCall(bitlyNewUrl);
+                Log.e(TAG, "[Save] Response: " + jsonSaveStr);
+                if(jsonSaveStr != null){
+                    try{
+                        JSONObject jsonSaveObj = new JSONObject(jsonSaveStr);
+                        if(isDuplicateLink(jsonSaveObj)) {
+                            showToast = true;
+                        }else{
+                            showToast = false;
+                        }
+                    }catch (final JSONException e) {
+                        Log.e(TAG, "[Save] Json parsing error: " + e.getMessage());
                     }
+                }
+                try
+                {
+                    Thread.sleep(1000);
+                }
+                catch(Exception e)
+                {
+                    Log.e("Categories Section:", e.getMessage());
+                }
+            }
 
-                } catch (final JSONException e) {
-                    Log.e(TAG, "Json parsing error: " + e.getMessage());
+            String jsonHistoryStr = sh.makeServiceCall(bitlyHistoryUrl);
+            Log.e(TAG, "[Hitory] Response: " + jsonHistoryStr);
+
+            if(jsonHistoryStr != null){
+                try{
+                    JSONObject jsonHistoryObj = new JSONObject(jsonHistoryStr);
+                    getHistory(jsonHistoryObj);
+                }catch (final JSONException e) {
+                    Log.e(TAG, "[History] Json parsing error: " + e.getMessage());
 
                 }
             }
+
             return null;
         }
 
         protected void onPostExecute(Void result) {
             super.onPostExecute(result);
+
             ListAdapter adapter = new SimpleAdapter(MainActivity.this, bitLinkList,
                     R.layout.list_item, new String[]{ "title", "link", "long_url"},
                     new int[]{R.id.title, R.id.link, R.id.long_url});
             mListView.setAdapter(adapter);
+            Log.e(TAG, "showToast : " + showToast);
+            if(showToast){
+                Toast toast = Toast.makeText(MainActivity.this, "The link has been saved", Toast.LENGTH_LONG);
+                toast.show();
+            }
         }
     }
 
     private void getHistory(JSONObject jsonObj) throws JSONException {
         String TAG = "History";
-        // Getting data object
+
+        // Getting link history object
         JSONObject data = jsonObj.getJSONObject("data");
         JSONArray link_history = data.getJSONArray("link_history");
         Log.e(TAG, "link_history: " + link_history);
-
-        // looping through All data
+        bitLinkList.clear();
+        // Getting attributes
         for (int i = 0; i < link_history.length(); i++) {
-            JSONObject attr = link_history.getJSONObject(i);
-            String link = attr.getString("link");
-            String long_url = attr.getString("long_url");
-            String title = attr.getString("title");
+            JSONObject links = link_history.getJSONObject(i);
+            String link = links.getString("link");
+            String long_url = links.getString("long_url");
+            String title = links.getString("title");
             if(title.equals("")){
                 title = "Untitled";
             }
 
             HashMap<String, String> bitlink = new HashMap<>();
 
-            // adding each child node to HashMap key => value
             bitlink.put("title", title);
             bitlink.put("link", link);
             bitlink.put("long_url", long_url);
@@ -146,6 +175,28 @@ public class MainActivity extends AppCompatActivity {
             bitLinkList.add(bitlink);
         }
         Log.e(TAG, "bitLinkList: " + bitLinkList);
+    }
+
+    private boolean isDuplicateLink(JSONObject jsonObj) throws JSONException {
+        String TAG = "Save";
+
+        // Getting link history object
+        JSONObject data = jsonObj.getJSONObject("data");
+        JSONObject link_save = data.getJSONObject("link_save");
+        Log.e(TAG, "link_save: " + link_save);
+
+        String new_link = link_save.getString("new_link");
+        Log.e(TAG, "Duplicate Link: " + new_link);
+
+        boolean isDuplicate;
+
+        if(new_link.equals("1")){
+            isDuplicate = false;
+        }else{
+            isDuplicate = true;
+        }
+
+        return isDuplicate;
     }
 
 
