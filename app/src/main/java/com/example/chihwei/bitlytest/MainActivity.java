@@ -16,6 +16,7 @@ import android.widget.EditText;
 import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.SimpleAdapter;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONArray;
@@ -27,12 +28,14 @@ import java.util.HashMap;
 
 public class MainActivity extends AppCompatActivity {
 
+    private TextView mTotalClicks;
     private ListView mListView;
     private Button mButton;
     private EditText newURL;
     private ArrayList<HashMap<String, String>> bitLinkList;
     String bitlyHistoryUrl = "https://api-ssl.bitly.com/v3/user/link_history?access_token=e5137bf26b61baa3c51779306899732bd0f3df44";
-    String bitlyClicks = "";
+    String bitlyUserClicks = "https://api-ssl.bitly.com/v3/user/clicks?access_token=e5137bf26b61baa3c51779306899732bd0f3df44";
+    String bitlylinkClicks;
     String bitlyNewUrl;
 
     @Override
@@ -43,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
         bitLinkList = new ArrayList<>();
+        mTotalClicks = (TextView) findViewById(R.id.totalClicks);
         mListView = (ListView) findViewById(R.id.list);
         mButton = (Button) findViewById(R.id.button);
         new GetAPIResponse().execute("History");
@@ -86,6 +90,7 @@ public class MainActivity extends AppCompatActivity {
     private class GetAPIResponse extends AsyncTask<String, Void, Void> {
         String TAG = "API";
         boolean showToast;
+        int totalClicks;
         @Override
         protected Void doInBackground(String... params) {
 
@@ -115,6 +120,19 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
 
+            String jsonUserClicksStr = sh.makeServiceCall(bitlyUserClicks);
+            Log.e(TAG, "[Total clicks] Response: " + jsonUserClicksStr);
+            if(jsonUserClicksStr != null){
+                try{
+                    JSONObject jsonUserClicks = new JSONObject(jsonUserClicksStr);
+                    totalClicks = getTotalClicks(jsonUserClicks);
+                }catch (final JSONException e){
+                    Log.e(TAG, "[Total clicks] Json Parsing error: " + e.getMessage());
+                }
+
+            }
+
+
             String jsonHistoryStr = sh.makeServiceCall(bitlyHistoryUrl);
             Log.e(TAG, "[Hitory] Response: " + jsonHistoryStr);
 
@@ -128,15 +146,35 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
 
+            for(int i = 0; i < bitLinkList.size(); i++) {
+                String link = bitLinkList.get(i).get("link");
+                bitlylinkClicks = "https://api-ssl.bitly.com/v3/link/clicks?access_token=e5137bf26b61baa3c51779306899732bd0f3df44&link=" + link;
+                String jsonLinkClicksStr = sh.makeServiceCall(bitlylinkClicks);
+                Log.e(TAG, "[Clicks] Response: " + jsonLinkClicksStr);
+
+                if (jsonLinkClicksStr != null) {
+                    try {
+                        JSONObject jsonClicksObj = new JSONObject(jsonLinkClicksStr);
+                        String clicks = getBitlinkClicks(jsonClicksObj);
+                        bitLinkList.get(i).put("clicks", clicks);
+
+                    } catch (final JSONException e) {
+                        Log.e(TAG, "[Clicks] Json parsing error: " + e.getMessage());
+                    }
+                }
+
+            }
             return null;
         }
 
         protected void onPostExecute(Void result) {
             super.onPostExecute(result);
 
+            mTotalClicks.setText("TOTAL CLICKS: " + totalClicks);
+
             ListAdapter adapter = new SimpleAdapter(MainActivity.this, bitLinkList,
-                    R.layout.list_item, new String[]{ "title", "link", "long_url"},
-                    new int[]{R.id.title, R.id.link, R.id.long_url});
+                    R.layout.list_item, new String[]{ "title", "link", "long_url", "clicks"},
+                    new int[]{R.id.title, R.id.link, R.id.long_url, R.id.clicks});
             mListView.setAdapter(adapter);
             Log.e(TAG, "showToast : " + showToast);
             if(showToast){
@@ -144,6 +182,23 @@ public class MainActivity extends AppCompatActivity {
                 toast.show();
             }
         }
+    }
+
+    private String getBitlinkClicks(JSONObject jsonObj) throws JSONException{
+        String TAG = "Bitlink Clicks";
+        JSONObject data = jsonObj.getJSONObject("data");
+        String bitlinkClicks = data.getString("link_clicks");
+        Log.e(TAG, "link_clicks:" + bitlinkClicks);
+        return bitlinkClicks;
+    }
+
+    private int getTotalClicks(JSONObject jsonObj) throws JSONException{
+        String TAG = "Total Clicks";
+        JSONObject data = jsonObj.getJSONObject("data");
+        int totalClicks = data.getInt("total_clicks");
+        Log.e(TAG, "total_clicks: " + totalClicks);
+
+        return totalClicks;
     }
 
     private void getHistory(JSONObject jsonObj) throws JSONException {
@@ -170,8 +225,6 @@ public class MainActivity extends AppCompatActivity {
             bitlink.put("link", link);
             bitlink.put("long_url", long_url);
 
-
-            // adding contact to contact list
             bitLinkList.add(bitlink);
         }
         Log.e(TAG, "bitLinkList: " + bitLinkList);
